@@ -71,7 +71,8 @@ type QueryExpressionType string
 
 // Constants for expression type.
 const (
-	QueryExpressionTypeSQL QueryExpressionType = "SQL"
+	QueryExpressionTypeSQL    QueryExpressionType = "SQL"
+	QueryExpressionTypeCustom                     = "CUSTOM"
 )
 
 // JSONType determines json input serialization type.
@@ -448,6 +449,43 @@ func (c Client) SelectObjectContent(ctx context.Context, bucketName, objectName 
 	urlValues := make(url.Values)
 	urlValues.Set("select", "")
 	urlValues.Set("select-type", "2")
+
+	// Execute POST on bucket/object.
+	resp, err := c.executeMethod(ctx, http.MethodPost, requestMetadata{
+		bucketName:       bucketName,
+		objectName:       objectName,
+		queryValues:      urlValues,
+		customHeader:     opts.Header(),
+		contentMD5Base64: sumMD5Base64(selectReqBytes),
+		contentSHA256Hex: sum256Hex(selectReqBytes),
+		contentBody:      bytes.NewReader(selectReqBytes),
+		contentLength:    int64(len(selectReqBytes)),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return NewSelectResults(resp, bucketName)
+}
+
+// GetCustomObjectContent is a implementation of http://docs.aws.amazon.com/AmazonS3/latest/API/RESTObjectSELECTContent.html AWS S3 API.
+func (c Client) GetCustomObjectContent(ctx context.Context, bucketName, objectName string, opts SelectObjectOptions) (*SelectResults, error) {
+	// Input validation.
+	if err := s3utils.CheckValidBucketName(bucketName); err != nil {
+		return nil, err
+	}
+	if err := s3utils.CheckValidObjectName(objectName); err != nil {
+		return nil, err
+	}
+
+	selectReqBytes, err := xml.Marshal(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	urlValues := make(url.Values)
+	urlValues.Set("custom", "")
+	urlValues.Set("custom-type", "1")
 
 	// Execute POST on bucket/object.
 	resp, err := c.executeMethod(ctx, http.MethodPost, requestMetadata{
